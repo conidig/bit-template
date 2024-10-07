@@ -41,8 +41,8 @@ async def forward(self):
         bt.logging.error("Failed to get work from endpoint")
         return
 
-    request_id = work_data.get('request_id')
-    timestamp = work_data.get('timestamp')
+    request_id = work_data.get('request_id', 'default_request_id')
+    timestamp = work_data.get('timestamp', str(int(time.time())))
     validator_hotkey = self.wallet.hotkey.ss58_address
 
     bt.logging.info(f"Received work data: Request ID: {request_id}, Timestamp: {timestamp}, Validator Hotkey: {validator_hotkey}")
