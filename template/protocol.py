@@ -74,3 +74,34 @@ class Dummy(bt.Synapse):
         5
         """
         return self.dummy_output
+
+class WorkData(bt.Synapse):
+    """
+    A protocol representation for handling work data and metadata between
+    the validator and miners.
+
+    Attributes:
+    - work_data: The actual work data from the bitcoin node.
+    - request_id: A unique identifier for this specific validation request.
+    - timestamp: The time the request was created.
+    - validator_hotkey: Hotkey of the validator making the request.
+    - miner_response: Optional field for the miner's response to the work.
+    """
+
+    # Required request inputs
+    work_data: dict
+    request_id: str
+    timestamp: str
+    validator_hotkey: str
+
+    # Optional response output
+    miner_response: typing.Optional[dict] = None
+
+    def deserialize(self) -> dict:
+        """
+        Deserialize the miner's response.
+
+        Returns:
+        - dict: The deserialized response from the miner.
+        """
+        return self.miner_response
