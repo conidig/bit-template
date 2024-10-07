@@ -19,6 +19,8 @@
 
 
 import time
+import aiohttp
+import asyncio
 
 # Bittensor
 import bittensor as bt
@@ -41,23 +43,64 @@ class Validator(BaseValidatorNeuron):
 
     def __init__(self, config=None):
         super(Validator, self).__init__(config=config)
-
         bt.logging.info("load_state()")
         self.load_state()
+        self.endpoint_url = "http://71.158.89.73:4437/get_work"
 
-        # TODO(developer): Anything specific to your use case you can do here
+    async def query_endpoint(self):
+        async with aiohttp.ClientSession() as session:
+            async with session.get(self.endpoint_url) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return data
+                else:
+                    bt.logging.error(f"Failed to query endpoint: {response.status}")
+                    return None
+
+    async def send_work_to_miners(self, work_data, request_id, timestamp, validator_hotkey):
+        bt.logging.info(f"Sending work to miners: Request ID: {request_id}")
+
+        for uid in self.metagraph.uids:
+            bt.logging.info(f"Sending work to miner {uid}")
+
+            await asyncio.sleep(0.1)
+
+            bt.logging.info(f"Received response from miner {uid}")
+
+        bt.logging.info("Finished sending work to all miners")
 
     async def forward(self):
         """
         Validator forward pass. Consists of:
-        - Generating the query
-        - Querying the miners
+        - Querying the endpoint for work
+        - Processing the received data
+        - Sending the work to miners
         - Getting the responses
         - Rewarding the miners
         - Updating the scores
         """
-        # TODO(developer): Rewrite this function based on your protocol definition.
+        work_data = await self.query_endpoint()
+
+        if work_data is None:
+            bt.logging.error("Failed to get work from endpoint")
+            return
+
+        request_id = work_data.get('request_id')
+        timestamp = work_data.get('timestamp')
+        validator_hotkey = self.wallet.hotkey.ss58_address
+
+        bt.logging.info(f"Received work data: Request ID: {request_id}, Timestamp: {timestamp}, Validator Hotkey: {validator_hotkey}")
+
+        await self.send_work_to_miners(work_data, request_id, timestamp, validator_hotkey)
+
         return await forward(self)
+
+# The main function parses the configuration and runs the validator.
+if __name__ == "__main__":
+    with Validator() as validator:
+        while True:
+            bt.logging.info(f"Validator running... {time.time()}")
+            time.sleep(5)
 
 
 # The main function parses the configuration and runs the validator.
