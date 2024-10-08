@@ -30,6 +30,7 @@ import bittensor as bt
 # Add these imports
 import hashlib
 import struct
+import numpy as np  # Import numpy to handle numpy data types
 
 # import base validator class which takes care of most of the boilerplate
 from template.base.validator import BaseValidatorNeuron
@@ -42,6 +43,18 @@ from template.protocol import WorkData
 def detailed_log(message):
     bt.logging.info(f"[DETAILED] {message}")
 
+# Helper function to convert numpy data types to native types
+def convert_to_serializable(obj):
+    if isinstance(obj, dict):
+        return {key: convert_to_serializable(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_to_serializable(element) for element in obj]
+    elif isinstance(obj, (np.integer, np.int64, np.int32)):
+        return int(obj)
+    elif isinstance(obj, (np.floating, np.float64, np.float32)):
+        return float(obj)
+    else:
+        return obj
 
 class Validator(BaseValidatorNeuron):
     """
@@ -113,7 +126,6 @@ class Validator(BaseValidatorNeuron):
                 async with session.get(self.get_work_url) as response:
                     if response.status == 200:
                         data = await response.json()
-                        bt.logging.info(f"Received data from endpoint: {data}")
                         # Use default values if 'request_id' or 'timestamp' are missing
                         data['request_id'] = data.get('request_id', 'default_request_id')
                         data['timestamp'] = data.get('timestamp', str(int(time.time())))
@@ -145,7 +157,7 @@ class Validator(BaseValidatorNeuron):
                     timestamp=work_data.get('timestamp', str(int(time.time()))),
                     validator_hotkey=self.wallet.hotkey.ss58_address
                 )
-                bt.logging.info(f"Created synapse: {synapse}")
+                bt.logging.info(f"Created synapse")
                 response = await self.dendrite(
                     axons=[self.metagraph.axons[uid]],
                     synapse=synapse,
@@ -154,7 +166,12 @@ class Validator(BaseValidatorNeuron):
                 )
                 bt.logging.info(f"Raw response from dendrite: {response}")
                 if response and response[0] is not None:
-                    miner_response = {'uid': uid, 'hash': response[0].miner_response}
+                    miner_response = {
+                        'uid': int(uid),  # Convert uid to int
+                        'block_hash': response[0]['block_hash'],
+                        'nonce': int(response[0]['nonce'])  # Convert nonce to int
+                    }
+                    bt.logging.info(f"Type of response[0]: {type(response[0])}")
                     bt.logging.info(f"Received response from miner {uid}: {miner_response}")
                     miner_responses.append(miner_response)
                 else:
@@ -169,8 +186,10 @@ class Validator(BaseValidatorNeuron):
     async def submit_work(self, best_response):
         bt.logging.info(f"Submitting work to: {self.submit_work_url}")
         try:
+            # Convert best_response to serializable types
+            best_response_serializable = convert_to_serializable(best_response)
             async with aiohttp.ClientSession() as session:
-                async with session.post(self.submit_work_url, json=best_response) as response:
+                async with session.post(self.submit_work_url, json=best_response_serializable) as response:
                     if response.status == 200:
                         bt.logging.info("Work submitted successfully")
                         return True
@@ -186,13 +205,13 @@ class Validator(BaseValidatorNeuron):
         try:
             bt.logging.info("Attempting to query endpoint")
             work_data = await self.query_endpoint()
-            bt.logging.info(f"Received work data: {work_data}")
             if work_data:
                 bt.logging.info("Successfully received work data. Attempting to send work to miners")
                 miner_responses = await self.send_work_to_miners(work_data)
                 bt.logging.info(f"Received miner responses: {miner_responses}")
                 if miner_responses:
-                    best_response = max(miner_responses, key=lambda x: x['hash'])
+                    # Select the best response based on the lowest block hash value
+                    best_response = min(miner_responses, key=lambda x: int(x['block_hash'], 16))
                     bt.logging.info(f"Best response: {best_response}")
                     submit_result = await self.submit_work(best_response)
                     bt.logging.info(f"Work submission result: {submit_result}")
