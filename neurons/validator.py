@@ -23,7 +23,6 @@ import aiohttp
 import asyncio
 import requests
 import argparse
-import re
 
 # Bittensor
 import bittensor as bt
@@ -41,14 +40,7 @@ from template.protocol import WorkData
 
 # Add a helper function for detailed logging
 def detailed_log(message):
-    if isinstance(message, dict):
-        # Remove transaction-related keys
-        cleaned_message = {k: v for k, v in message.items() if k not in ['transactions', 'data', 'hash', 'txid', 'fee', 'sigops', 'weight', 'depends']}
-        bt.logging.info(f"[DETAILED] {cleaned_message}")
-    else:
-        # For non-dict messages, remove any transaction-like data
-        cleaned_message = re.sub(r"'(data|hash|txid|fee|sigops|weight|depends)':\s*'?[^'}\n]*'?,?\s*", "", str(message))
-        bt.logging.info(f"[DETAILED] {cleaned_message}")
+    bt.logging.info(f"[DETAILED] {message}")
 
 
 class Validator(BaseValidatorNeuron):
@@ -115,104 +107,102 @@ class Validator(BaseValidatorNeuron):
             bt.logging.info(f"Miner {uid} - IP: {self.metagraph.axons[uid].ip}, Port: {self.metagraph.axons[uid].port}")
 
     async def query_endpoint(self):
-        detailed_log(f"Querying endpoint: {self.get_work_url}")
+        bt.logging.info(f"Querying endpoint: {self.get_work_url}")
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(self.get_work_url) as response:
                     if response.status == 200:
                         data = await response.json()
-                        detailed_log(f"Received data from endpoint: {data}")
+                        bt.logging.info(f"Received data from endpoint: {data}")
+                        # Use default values if 'request_id' or 'timestamp' are missing
                         data['request_id'] = data.get('request_id', 'default_request_id')
                         data['timestamp'] = data.get('timestamp', str(int(time.time())))
                         return data
                     else:
-                        detailed_log(f"Failed to query endpoint: {response.status}")
+                        bt.logging.error(f"Failed to query endpoint: {response.status}")
                         return None
         except aiohttp.ClientError as e:
-            detailed_log(f"Error querying endpoint: {str(e)}")
+            bt.logging.error(f"Error querying endpoint: {str(e)}")
             return None
 
     async def send_work_to_miners(self, work_data):
-        detailed_log(f"Sending work to miners: Request ID: {work_data.get('request_id', 'N/A')}")
+        bt.logging.info(f"Sending work to miners: Request ID: {work_data.get('request_id', 'N/A')}")
 
         miner_responses = []
         for uid in self.metagraph.uids:
-            detailed_log(f"Sending work to miner {uid}")
-            detailed_log(f"Miner {uid} axon details: {self.metagraph.axons[uid]}")
+            bt.logging.info(f"Sending work to miner {uid}")
+            bt.logging.info(f"Miner {uid} axon details: {self.metagraph.axons[uid]}")
             try:
-                detailed_log(f"nonce_range_start value: {work_data.get('nonce_range_start', 0)}")
-                synapse = WorkData.create(
+                synapse = WorkData(
                     work_data={
                         'block': work_data.get('block', ''),
                         'target': work_data.get('target', ''),
                         'nonce_range_start': work_data.get('nonce_range_start', 0),
                         'nonce_range_end': work_data.get('nonce_range_end', 1000000),
+                        'transactions': work_data.get('transactions', [])
                     },
                     request_id=work_data.get('request_id', 'default_request_id'),
                     timestamp=work_data.get('timestamp', str(int(time.time()))),
                     validator_hotkey=self.wallet.hotkey.ss58_address
                 )
-                detailed_log(f"Created WorkData synapse: {synapse}")
+                bt.logging.info(f"Created synapse: {synapse}")
                 response = await self.dendrite(
                     axons=[self.metagraph.axons[uid]],
                     synapse=synapse,
                     deserialize=True,
                     timeout=10
                 )
-                detailed_log(f"Raw response from dendrite: {response}")
+                bt.logging.info(f"Raw response from dendrite: {response}")
                 if response and response[0] is not None:
                     miner_response = {'uid': uid, 'hash': response[0].miner_response}
-                    detailed_log(f"Received response from miner {uid}: {miner_response}")
+                    bt.logging.info(f"Received response from miner {uid}: {miner_response}")
                     miner_responses.append(miner_response)
                 else:
-                    detailed_log(f"No valid response received from miner {uid}")
+                    bt.logging.warning(f"No valid response received from miner {uid}")
             except Exception as e:
-                detailed_log(f"Error communicating with miner {uid}: {str(e)}")
+                bt.logging.error(f"Error communicating with miner {uid}: {str(e)}")
+                bt.logging.error(f"Exception details: {type(e).__name__}, {str(e)}")
 
-        detailed_log(f"Finished sending work to all miners. Received {len(miner_responses)} valid responses.")
+        bt.logging.info(f"Finished sending work to all miners. Received {len(miner_responses)} valid responses.")
         return miner_responses
 
-    async def submit_work(self, work_data, miner_responses):
-        detailed_log("Submitting work to mining pool")
-        best_response = min(miner_responses, key=lambda x: x['hash']) if miner_responses else None
-        if best_response:
-            submit_data = {
-                'block': work_data['block'],
-                'nonce': best_response['hash'],
-                'miner_uid': best_response['uid']
-            }
-            detailed_log(f"Submitting best response: {submit_data}")
-            try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(self.submit_work_url, json=submit_data) as response:
-                        if response.status == 200:
-                            result = await response.json()
-                            detailed_log(f"Work submission successful: {result}")
-                            return result
-                        else:
-                            detailed_log(f"Work submission failed: {response.status}")
-            except aiohttp.ClientError as e:
-                detailed_log(f"Error submitting work: {str(e)}")
-        else:
-            detailed_log("No valid miner responses to submit")
-        return None
+    async def submit_work(self, best_response):
+        bt.logging.info(f"Submitting work to: {self.submit_work_url}")
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(self.submit_work_url, json=best_response) as response:
+                    if response.status == 200:
+                        bt.logging.info("Work submitted successfully")
+                        return True
+                    else:
+                        bt.logging.error(f"Failed to submit work. Status: {response.status}")
+                        return False
+        except Exception as e:
+            bt.logging.error(f"Error submitting work: {e}")
+            return False
 
     async def forward(self):
-        detailed_log("Starting forward pass")
-        work_data = await self.query_endpoint()
-        if work_data:
-            miner_responses = await self.send_work_to_miners(work_data)
-            if miner_responses:
-                result = await self.submit_work(work_data, miner_responses)
-                if result:
-                    detailed_log(f"Forward pass completed successfully: {result}")
+        bt.logging.info("Starting forward pass")
+        try:
+            bt.logging.info("Attempting to query endpoint")
+            work_data = await self.query_endpoint()
+            bt.logging.info(f"Received work data: {work_data}")
+            if work_data:
+                bt.logging.info("Successfully received work data. Attempting to send work to miners")
+                miner_responses = await self.send_work_to_miners(work_data)
+                bt.logging.info(f"Received miner responses: {miner_responses}")
+                if miner_responses:
+                    best_response = max(miner_responses, key=lambda x: x['hash'])
+                    bt.logging.info(f"Best response: {best_response}")
+                    submit_result = await self.submit_work(best_response)
+                    bt.logging.info(f"Work submission result: {submit_result}")
                 else:
-                    detailed_log("Forward pass completed, but work submission failed")
+                    bt.logging.warning("No valid responses from miners")
             else:
-                detailed_log("Forward pass completed, but no valid miner responses received")
-        else:
-            detailed_log("Forward pass failed: Unable to get work from endpoint")
-        detailed_log("Forward pass finished")
+                bt.logging.error("Failed to get work from endpoint")
+        except Exception as e:
+            bt.logging.error(f"Error in forward pass: {str(e)}")
+            bt.logging.error(f"Exception details: {type(e).__name__}, {str(e)}")
 
 async def main():
     parser = argparse.ArgumentParser()
