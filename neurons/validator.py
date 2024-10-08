@@ -95,6 +95,8 @@ class Validator(BaseValidatorNeuron):
         bt.logging.info(f"Subtensor network: {self.subtensor.network}")
         bt.logging.info(f"Validator IP: {self.axon.external_ip}")
         bt.logging.info(f"Validator port: {self.axon.external_port}")
+        for uid in self.metagraph.uids:
+            bt.logging.info(f"Miner {uid} - IP: {self.metagraph.axons[uid].ip}, Port: {self.metagraph.axons[uid].port}")
 
     async def query_endpoint(self):
         bt.logging.info(f"Querying endpoint: {self.get_work_url}")
@@ -121,17 +123,27 @@ class Validator(BaseValidatorNeuron):
         miner_responses = []
         for uid in self.metagraph.uids:
             bt.logging.info(f"Sending work to miner {uid}")
-
+            bt.logging.info(f"Miner {uid} axon details: {self.metagraph.axons[uid]}")
             try:
-                # Send work to miner and receive response
-                synapse = WorkData(work_data=work_data, request_id=work_data['request_id'], timestamp=work_data['timestamp'], validator_hotkey=self.wallet.hotkey.ss58_address)
+                synapse = WorkData(
+                    work_data={
+                        'block': work_data.get('block', ''),
+                        'target': work_data.get('target', ''),
+                        'nonce_range_start': work_data.get('nonce_range_start', 0),
+                        'nonce_range_end': work_data.get('nonce_range_end', 1000000)
+                    },
+                    request_id=work_data['request_id'],
+                    timestamp=work_data['timestamp'],
+                    validator_hotkey=self.wallet.hotkey.ss58_address
+                )
+                bt.logging.info(f"Created synapse: {synapse}")
                 response = await self.dendrite(
                     axons=[self.metagraph.axons[uid]],
                     synapse=synapse,
                     deserialize=True,
-                    timeout=10  # Add a timeout to prevent hanging
+                    timeout=10
                 )
-
+                bt.logging.info(f"Raw response from dendrite: {response}")
                 if response and response[0] is not None:
                     miner_response = {'uid': uid, 'hash': response[0].miner_response}
                     bt.logging.info(f"Received response from miner {uid}: {miner_response}")
@@ -140,6 +152,7 @@ class Validator(BaseValidatorNeuron):
                     bt.logging.warning(f"No valid response received from miner {uid}")
             except Exception as e:
                 bt.logging.error(f"Error communicating with miner {uid}: {str(e)}")
+                bt.logging.error(f"Exception details: {type(e).__name__}, {str(e)}")
 
         bt.logging.info(f"Finished sending work to all miners. Received {len(miner_responses)} valid responses.")
         return miner_responses
@@ -161,16 +174,26 @@ class Validator(BaseValidatorNeuron):
 
     async def forward(self):
         bt.logging.info("Starting forward pass")
-        work_data = await self.query_endpoint()
-        if work_data:
-            miner_responses = await self.send_work_to_miners(work_data)
-            if miner_responses:
-                best_response = max(miner_responses, key=lambda x: x['hash'])
-                await self.submit_work(best_response)
+        try:
+            bt.logging.info("Attempting to query endpoint")
+            work_data = await self.query_endpoint()
+            bt.logging.info(f"Received work data: {work_data}")
+            if work_data:
+                bt.logging.info("Successfully received work data. Attempting to send work to miners")
+                miner_responses = await self.send_work_to_miners(work_data)
+                bt.logging.info(f"Received miner responses: {miner_responses}")
+                if miner_responses:
+                    best_response = max(miner_responses, key=lambda x: x['hash'])
+                    bt.logging.info(f"Best response: {best_response}")
+                    submit_result = await self.submit_work(best_response)
+                    bt.logging.info(f"Work submission result: {submit_result}")
+                else:
+                    bt.logging.warning("No valid responses from miners")
             else:
-                bt.logging.warning("No valid responses from miners")
-        else:
-            bt.logging.error("Failed to get work from endpoint")
+                bt.logging.error("Failed to get work from endpoint")
+        except Exception as e:
+            bt.logging.error(f"Error in forward pass: {str(e)}")
+            bt.logging.error(f"Exception details: {type(e).__name__}, {str(e)}")
 
 async def main():
     parser = argparse.ArgumentParser()
