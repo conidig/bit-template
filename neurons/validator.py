@@ -27,12 +27,20 @@ import argparse
 # Bittensor
 import bittensor as bt
 
+# Add these imports
+import hashlib
+import struct
+
 # import base validator class which takes care of most of the boilerplate
 from template.base.validator import BaseValidatorNeuron
 
 # Bittensor Validator Template:
 from template.validator import forward
 from template.protocol import WorkData
+
+# Add a helper function for detailed logging
+def detailed_log(message):
+    bt.logging.info(f"[DETAILED] {message}")
 
 
 class Validator(BaseValidatorNeuron):
@@ -118,7 +126,7 @@ class Validator(BaseValidatorNeuron):
             return None
 
     async def send_work_to_miners(self, work_data):
-        bt.logging.info(f"Sending work to miners: Request ID: {work_data['request_id']}")
+        bt.logging.info(f"Sending work to miners: Request ID: {work_data.get('request_id', 'N/A')}")
 
         miner_responses = []
         for uid in self.metagraph.uids:
@@ -130,10 +138,11 @@ class Validator(BaseValidatorNeuron):
                         'block': work_data.get('block', ''),
                         'target': work_data.get('target', ''),
                         'nonce_range_start': work_data.get('nonce_range_start', 0),
-                        'nonce_range_end': work_data.get('nonce_range_end', 1000000)
+                        'nonce_range_end': work_data.get('nonce_range_end', 1000000),
+                        'transactions': work_data.get('transactions', [])
                     },
-                    request_id=work_data['request_id'],
-                    timestamp=work_data['timestamp'],
+                    request_id=work_data.get('request_id', 'default_request_id'),
+                    timestamp=work_data.get('timestamp', str(int(time.time()))),
                     validator_hotkey=self.wallet.hotkey.ss58_address
                 )
                 bt.logging.info(f"Created synapse: {synapse}")
