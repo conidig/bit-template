@@ -65,17 +65,7 @@ class Miner(BaseMinerNeuron):
         nonce_range_end = synapse.work_data.get('nonce_range_end')
 
         if not all([block, target, nonce_range_start, nonce_range_end]):
-            missing_fields = []
-            if not block:
-                missing_fields.append('block')
-            if not target:
-                missing_fields.append('target')
-            if not nonce_range_start:
-                missing_fields.append('nonce_range_start')
-            if not nonce_range_end:
-                missing_fields.append('nonce_range_end')
-
-            self.logger.error(f"Invalid work data received. Missing fields: {', '.join(missing_fields)}")
+            self.logger.error("Invalid work data received")
             return synapse
 
         self.logger.info(f"Starting mining process for block: {block[:10]}...")
