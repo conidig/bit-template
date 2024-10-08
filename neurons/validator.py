@@ -113,7 +113,7 @@ class Validator(BaseValidatorNeuron):
                 async with session.get(self.get_work_url) as response:
                     if response.status == 200:
                         data = await response.json()
-                        bt.logging.info(f"Received data from endpoint: {data}")
+                        #bt.logging.info(f"Received data from endpoint: {data}")
                         # Use default values if 'request_id' or 'timestamp' are missing
                         data['request_id'] = data.get('request_id', 'default_request_id')
                         data['timestamp'] = data.get('timestamp', str(int(time.time())))
@@ -186,7 +186,7 @@ class Validator(BaseValidatorNeuron):
         try:
             bt.logging.info("Attempting to query endpoint")
             work_data = await self.query_endpoint()
-            bt.logging.info(f"Received work data: {work_data}")
+            #bt.logging.info(f"Received work data: {work_data}")
             if work_data:
                 bt.logging.info("Successfully received work data. Attempting to send work to miners")
                 miner_responses = await self.send_work_to_miners(work_data)
@@ -217,7 +217,7 @@ async def main():
         while True:
             bt.logging.info(f"Validator running... {time.time()}")
             await validator.forward()
-            await asyncio.sleep(5)
+            await asyncio.sleep(30)
 
 # The main function parses the configuration and runs the validator.
 if __name__ == "__main__":
