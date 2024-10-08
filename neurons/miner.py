@@ -83,16 +83,6 @@ class Miner(BaseMinerNeuron):
         self.logger.info(f"Target: {target}")
         self.logger.info(f"Assigned nonce range: {nonce_range_start} to {nonce_range_end}")
 
-        # Convert target from compact form to full target
-        bits = int(target, 16)
-        target_full = self.bits_to_target(bits)
-
-        # Simulate lower difficulty by increasing the target value
-        test_difficulty_factor = 1e20  # Significantly lowered factor for testing
-        target_full = int(target_full * test_difficulty_factor)
-
-        self.logger.info(f"Adjusted target (full): {target_full}")
-
         hashes_computed = 0
         start_time = time.time()
 
@@ -101,7 +91,7 @@ class Miner(BaseMinerNeuron):
             block_hash = self.double_sha256(block_header)
             hashes_computed += 1
 
-            if int(block_hash, 16) < target_full:
+            if int(block_hash, 16) < int(target, 16):
                 end_time = time.time()
                 duration = end_time - start_time
                 hash_rate = hashes_computed / duration if duration > 0 else 0
