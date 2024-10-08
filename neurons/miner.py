@@ -68,17 +68,40 @@ class Miner(BaseMinerNeuron):
             self.logger.error("Invalid work data received")
             return synapse
 
+        self.logger.info(f"Starting mining process for block: {block[:10]}...")
+        self.logger.info(f"Target: {target}")
         self.logger.info(f"Assigned nonce range: {nonce_range_start} to {nonce_range_end}")
+
+        hashes_computed = 0
+        start_time = time.time()
 
         for nonce in range(nonce_range_start, nonce_range_end):
             block_header = block + str(nonce)
             block_hash = self.double_sha256(block_header)
+            hashes_computed += 1
 
             if int(block_hash, 16) < int(target, 16):
+                end_time = time.time()
+                duration = end_time - start_time
+                hash_rate = hashes_computed / duration if duration > 0 else 0
                 self.logger.info(f"Found valid hash: {block_hash} with nonce: {nonce}")
+                self.logger.info(f"Hashing took {duration:.2f} seconds")
+                self.logger.info(f"Hash rate: {hash_rate:.2f} hashes/second")
                 synapse.miner_response = {'block_hash': block_hash, 'nonce': nonce}
                 break
 
+            if hashes_computed % 1000 == 0:
+                self.logger.info(f"Computed {hashes_computed} hashes...")
+
+        if not synapse.miner_response:
+            end_time = time.time()
+            duration = end_time - start_time
+            hash_rate = hashes_computed / duration if duration > 0 else 0
+            self.logger.info("No valid hash found in given range")
+            self.logger.info(f"Hashing took {duration:.2f} seconds")
+            self.logger.info(f"Hash rate: {hash_rate:.2f} hashes/second")
+
+        self.logger.info(f"Sending response: {synapse.miner_response}")
         return synapse
 
     async def blacklist(
