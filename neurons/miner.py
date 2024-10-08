@@ -58,15 +58,26 @@ class Miner(BaseMinerNeuron):
         return target
 
     async def forward(self, synapse: template.protocol.WorkData) -> template.protocol.WorkData:
+        self.logger.info(f"Received synapse object: {synapse}")
         self.logger.info(f"Received work data: {synapse.work_data}")
+        self.logger.info(f"Synapse work_data type: {type(synapse.work_data)}")
+        self.logger.info(f"Synapse work_data keys: {synapse.work_data.keys()}")
+
         block = synapse.work_data.get('block')
         target = synapse.work_data.get('target')
         nonce_range_start = synapse.work_data.get('nonce_range_start')
         nonce_range_end = synapse.work_data.get('nonce_range_end')
 
-        if not all([block, target, nonce_range_start, nonce_range_end]):
-            self.logger.error("Invalid work data received")
-            return synapse
+        self.logger.info(f"Block: {block}")
+        self.logger.info(f"Target: {target}")
+        self.logger.info(f"Nonce range start: {nonce_range_start}")
+        self.logger.info(f"Nonce range end: {nonce_range_end}")
+
+        if not all(field in synapse.work_data and (synapse.work_data[field] is not None or field == 'nonce_range_start') for field in ['block', 'target', 'nonce_range_start', 'nonce_range_end']):
+            missing_fields = [field for field in ['block', 'target', 'nonce_range_start', 'nonce_range_end'] if field not in synapse.work_data or (synapse.work_data[field] is None and field != 'nonce_range_start')]
+            if missing_fields:
+                self.logger.error(f"Invalid work data received. Missing fields: {', '.join(missing_fields)}")
+                return synapse
 
         self.logger.info(f"Starting mining process for block: {block[:10]}...")
         self.logger.info(f"Target: {target}")
