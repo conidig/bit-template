@@ -133,9 +133,6 @@ class BaseNeuron(ABC):
         if self.should_set_weights():
             self.set_weights()
 
-        # Always save state.
-        self.save_state()
-
     def check_registered(self):
         # --- Check for registration.
         if not self.subtensor.is_hotkey_registered(
@@ -173,6 +170,8 @@ class BaseNeuron(ABC):
         )  # don't set weights if you're a miner
 
     def save_state(self):
+        bt.logging.warning(
+            "save_state() not implemented for this neuron. You can implement this function to save model checkpoints or other useful data."
         
         )
 
