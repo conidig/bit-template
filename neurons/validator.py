@@ -175,8 +175,8 @@ class Validator(BaseValidatorNeuron):
                     # Access the correct keys from the response
                     miner_response = {
                         'uid': int(uid),  # Convert uid to int
-                        'block_hash': response[0]['miner_response']['block_hash'],
-                        'nonce': int(response[0]['miner_response']['nonce'])  # Convert nonce to int
+                        'block_hash': response[0]['block_hash'],
+                        'nonce': int(response[0]['nonce'])  # Convert nonce to int
                     }
                     bt.logging.info(f"Received response from miner {uid}: {miner_response}")
                     miner_responses.append(miner_response)
