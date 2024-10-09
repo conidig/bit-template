@@ -17,7 +17,6 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
-
 import time
 import aiohttp
 import asyncio
@@ -27,21 +26,15 @@ import argparse
 # Bittensor
 import bittensor as bt
 
-# Add these imports
-import hashlib
-import struct
-import numpy as np  # Import numpy to handle numpy data types
+# Additional imports
+import numpy as np  # For handling numpy data types
 
-# import base validator class which takes care of most of the boilerplate
+# Import base validator class which takes care of most of the boilerplate
 from template.base.validator import BaseValidatorNeuron
 
 # Bittensor Validator Template:
 from template.validator import forward
 from template.protocol import WorkData
-
-# Add a helper function for detailed logging
-def detailed_log(message):
-    bt.logging.info(f"[DETAILED] {message}")
 
 # Helper function to convert numpy data types to native types
 def convert_to_serializable(obj):
@@ -58,11 +51,7 @@ def convert_to_serializable(obj):
 
 class Validator(BaseValidatorNeuron):
     """
-    Your validator neuron class. You should use this class to define your validator's behavior. In particular, you should replace the forward function with your own logic.
-
-    This class inherits from the BaseValidatorNeuron class, which in turn inherits from BaseNeuron. The BaseNeuron class takes care of routine tasks such as setting up wallet, subtensor, metagraph, logging directory, parsing config, etc. You can override any of the methods in BaseNeuron if you need to customize the behavior.
-
-    This class provides reasonable default behavior for a validator such as keeping a moving average of the scores of the miners and using them to set weights at the end of each epoch. Additionally, the scores are reset for new hotkeys at the end of each epoch.
+    Validator neuron class. This class defines the validator's behavior, particularly the `forward` method.
     """
 
     def __init__(self, config=None):
@@ -141,16 +130,33 @@ class Validator(BaseValidatorNeuron):
         bt.logging.info(f"Sending work to miners: Request ID: {work_data.get('request_id', 'N/A')}")
 
         miner_responses = []
-        for uid in self.metagraph.uids:
+        total_nonce_range_start = work_data.get('nonce_range_start', 0)
+        total_nonce_range_end = work_data.get('nonce_range_end', 1000000)
+        total_nonce_range_size = total_nonce_range_end - total_nonce_range_start + 1
+        num_miners = len(self.metagraph.uids)
+        nonce_range_per_miner = total_nonce_range_size // num_miners if num_miners > 0 else total_nonce_range_size
+
+        for idx, uid in enumerate(self.metagraph.uids):
             bt.logging.info(f"Sending work to miner {uid}")
             bt.logging.info(f"Miner {uid} axon details: {self.metagraph.axons[uid]}")
+
+            # Calculate unique nonce ranges for each miner
+            miner_nonce_start = total_nonce_range_start + idx * nonce_range_per_miner
+            miner_nonce_end = miner_nonce_start + nonce_range_per_miner - 1
+
+            # Ensure the last miner covers any remaining nonces
+            if idx == num_miners - 1:
+                miner_nonce_end = total_nonce_range_end
+
+            bt.logging.info(f"Assigned nonce range {miner_nonce_start} to {miner_nonce_end} for miner {uid}")
+
             try:
                 synapse = WorkData(
                     work_data={
                         'block': work_data.get('block', ''),
                         'target': work_data.get('target', ''),
-                        'nonce_range_start': work_data.get('nonce_range_start', 0),
-                        'nonce_range_end': work_data.get('nonce_range_end', 1000000),
+                        'nonce_range_start': miner_nonce_start,
+                        'nonce_range_end': miner_nonce_end,
                         'transactions': work_data.get('transactions', [])
                     },
                     request_id=work_data.get('request_id', 'default_request_id'),
@@ -162,16 +168,16 @@ class Validator(BaseValidatorNeuron):
                     axons=[self.metagraph.axons[uid]],
                     synapse=synapse,
                     deserialize=True,
-                    timeout=10
+                    timeout=60  # Adjust timeout as needed
                 )
                 bt.logging.info(f"Raw response from dendrite: {response}")
                 if response and response[0] is not None:
+                    # Access the correct keys from the response
                     miner_response = {
                         'uid': int(uid),  # Convert uid to int
-                        'block_hash': response[0]['block_hash'],
-                        'nonce': int(response[0]['nonce'])  # Convert nonce to int
+                        'block_hash': response[0]['miner_response']['block_hash'],
+                        'nonce': int(response[0]['miner_response']['nonce'])  # Convert nonce to int
                     }
-                    bt.logging.info(f"Type of response[0]: {type(response[0])}")
                     bt.logging.info(f"Received response from miner {uid}: {miner_response}")
                     miner_responses.append(miner_response)
                 else:
